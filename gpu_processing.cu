@@ -23,20 +23,28 @@ __global__ void PictureDevice_FILTER(png_byte *d_In, png_byte *d_Out, int height
 
 void execute_jobs_gpu(PROCESSING_JOB **jobs) {
     int count = 0;
-    float *d_filter, *h_filter;
-    png_byte *d_In, *d_Out;
-    size_t numPixels;
+    float *d_filter = nullptr;
+    png_byte *d_In = nullptr, *d_Out = nullptr;
+    size_t maxNumPixels = 0;
 
+    // Determine the maximum number of pixels to allocate memory once
     while (jobs[count] != NULL) {
-        numPixels = jobs[count]->height * jobs[count]->width * 3; // 3 for RGB channels
+        size_t numPixels = jobs[count]->height * jobs[count]->width * 3; // 3 for RGB channels
+        if (numPixels > maxNumPixels) {
+            maxNumPixels = numPixels;
+        }
+        count++;
+    }
 
-        // Allocate memory for filter on the host
-        h_filter = getAlgoFilterByType(jobs[count]->processing_algo);
+    // Allocate memory on the device
+    cudaMalloc((void **)&d_In, maxNumPixels * sizeof(png_byte));
+    cudaMalloc((void **)&d_Out, maxNumPixels * sizeof(png_byte));
+    cudaMalloc((void **)&d_filter, 25 * sizeof(float)); // Assuming a 5x5 filter
 
-        // Allocate memory on the device
-        cudaMalloc((void **)&d_In, numPixels * sizeof(png_byte));
-        cudaMalloc((void **)&d_Out, numPixels * sizeof(png_byte));
-        cudaMalloc((void **)&d_filter, 25 * sizeof(float)); // Assuming a 5x5 filter
+    count = 0;
+    while (jobs[count] != NULL) {
+        size_t numPixels = jobs[count]->height * jobs[count]->width * 3; // 3 for RGB channels
+        float *h_filter = getAlgoFilterByType(jobs[count]->processing_algo);
 
         // Copy data from host to device
         cudaMemcpy(d_In, jobs[count]->source_raw, numPixels * sizeof(png_byte), cudaMemcpyHostToDevice);
@@ -52,11 +60,11 @@ void execute_jobs_gpu(PROCESSING_JOB **jobs) {
         // Copy result back to host
         cudaMemcpy(jobs[count]->dest_raw, d_Out, numPixels * sizeof(png_byte), cudaMemcpyDeviceToHost);
 
-        // Free device memory
-        cudaFree(d_In);
-        cudaFree(d_Out);
-        cudaFree(d_filter);
-
         count++;
     }
+
+    // Free device memory
+    cudaFree(d_In);
+    cudaFree(d_Out);
+    cudaFree(d_filter);
 }
