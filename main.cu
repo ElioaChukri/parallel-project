@@ -1,5 +1,13 @@
 #include "header.h"
 
+__global__ void dummyKernel() {
+    // Empty kernel that does nothing
+}
+
+void activateGPU() {
+    dummyKernel<<<1, 1>>>();
+    cudaDeviceSynchronize();
+}
 
 long long timeInMilliseconds(void)
 {
@@ -12,6 +20,9 @@ long long timeInMilliseconds(void)
 
 int main(int argc, char **argv)
 {
+
+    // Function that turns the GPU on to ensure there is no overhead when it turns on later when processing images
+    activateGPU();
 
     long long processing_start = timeInMilliseconds();
     PROCESSING_JOB **jobs = prepare_jobs(argv[1]);
