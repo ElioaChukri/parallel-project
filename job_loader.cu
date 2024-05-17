@@ -82,16 +82,21 @@ PROCESSING_JOB** prepare_jobs(char *filename) {
     // Allocate memory for the jobs
     PROCESSING_JOB **processing_job = (PROCESSING_JOB **)malloc((nb_jobs + 1) * sizeof(PROCESSING_JOB*));
 
-    int num_threads = 4; // Adjust based on your CPU cores
+    int num_threads = 9; // Adjust based on your CPU cores. 9 is the optimal number for the given jobs.txt since there are 9 tasks
     pthread_t threads[num_threads];
     ThreadData thread_data[num_threads];
+
+    // Variables to handle the distribution of jobs among threads
     int jobs_per_thread = nb_jobs / num_threads;
+    int remaining_jobs = nb_jobs % num_threads;
+    int current_start_idx = 0;
 
     for (int i = 0; i < num_threads; i++) {
         thread_data[i].filename = filename;
         thread_data[i].processing_job = processing_job;
-        thread_data[i].start_idx = i * jobs_per_thread;
-        thread_data[i].end_idx = (i == num_threads - 1) ? nb_jobs : thread_data[i].start_idx + jobs_per_thread;
+        thread_data[i].start_idx = current_start_idx;
+        current_start_idx += jobs_per_thread + (i < remaining_jobs ? 1 : 0);
+        thread_data[i].end_idx = current_start_idx;
 
         pthread_create(&threads[i], NULL, prepare_job, (void *)&thread_data[i]);
     }
