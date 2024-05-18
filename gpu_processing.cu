@@ -41,18 +41,40 @@ void execute_jobs_gpu(PROCESSING_JOB **jobs) {
     cudaMalloc((void **)&d_Out, maxNumPixels * sizeof(png_byte));
     cudaMalloc((void **)&d_filter, 25 * sizeof(float)); // Assuming a 5x5 filter
 
-    count = 0;
+    // Initial creation of data and copying of data for the first image job
+    char* filename = jobs[0]->source_name;
+    size_t numPixels = jobs[0]->height * jobs[0]->width * 3; // 3 for RGB channels
+    float *h_filter = getAlgoFilterByType(jobs[0]->processing_algo);
+    cudaMemcpy(d_filter, h_filter, 25 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_In, jobs[0]->source_raw, numPixels * sizeof(png_byte), cudaMemcpyHostToDevice);
+    dim3 blocks((jobs[0]->width - 4 + 15) / 16, (jobs[0]->height - 4 + 15) / 16);
+    dim3 threads(16, 16);
+
+    // Run the kernel for the first image
+    PictureDevice_FILTER<<<blocks, threads>>>(d_In, d_Out, jobs[0]->height, jobs[0]->width, d_filter);
+
+    // Copy result back to host
+    cudaMemcpy(jobs[0]->dest_raw, d_Out, numPixels * sizeof(png_byte), cudaMemcpyDeviceToHost);
+
+    // Start loop at 1 since we already processed the first image
+    count = 1;
     while (jobs[count] != NULL) {
-        size_t numPixels = jobs[count]->height * jobs[count]->width * 3; // 3 for RGB channels
-        float *h_filter = getAlgoFilterByType(jobs[count]->processing_algo);
 
-        // Copy data from host to device
-        cudaMemcpy(d_In, jobs[count]->source_raw, numPixels * sizeof(png_byte), cudaMemcpyHostToDevice);
-        cudaMemcpy(d_filter, h_filter, 25 * sizeof(float), cudaMemcpyHostToDevice);
+        char* current_filename = jobs[count]->source_name;
 
-        // Set up the execution configuration
-        dim3 blocks((jobs[count]->width - 4 + 15) / 16, (jobs[count]->height - 4 + 15) / 16);
-        dim3 threads(16, 16);
+        // If the filename is different, we need to copy the new image to the device
+        if (strcmp(filename, current_filename) != 0) {
+            filename = current_filename;
+            numPixels = jobs[count]->height * jobs[count]->width * 3; // 3 for RGB channels
+            h_filter = getAlgoFilterByType(jobs[count]->processing_algo);
+            cudaMemcpy(d_filter, h_filter, 25 * sizeof(float), cudaMemcpyHostToDevice);
+            cudaMemcpy(d_In, jobs[count]->source_raw, numPixels * sizeof(png_byte), cudaMemcpyHostToDevice);
+            blocks = dim3((jobs[count]->width - 4 + 15) / 16, (jobs[count]->height - 4 + 15) / 16);
+        } else {
+            // If the filename is the same, we can reuse the data on the device
+            h_filter = getAlgoFilterByType(jobs[count]->processing_algo);
+            cudaMemcpy(d_filter, h_filter, 25 * sizeof(float), cudaMemcpyHostToDevice);
+        }
 
         // Launch the kernel
         PictureDevice_FILTER<<<blocks, threads>>>(d_In, d_Out, jobs[count]->height, jobs[count]->width, d_filter);
