@@ -1,20 +1,33 @@
 #include "header.h"
 
 __global__ void PictureDevice_FILTER(png_byte *d_In, png_byte *d_Out, int height, int width, float *d_filt) {
+    // Calculate thread coordinates
     int Col = blockIdx.x * blockDim.x + threadIdx.x;
     int Row = blockIdx.y * blockDim.y + threadIdx.y;
+
+    // Define shared memory for the filter
+    __shared__ float shared_filt[25]; // 5x5 filter
+
+    // Load filter into shared memory
+    if (threadIdx.x < 5 && threadIdx.y < 5) {
+        shared_filt[threadIdx.y * 5 + threadIdx.x] = d_filt[threadIdx.y * 5 + threadIdx.x];
+    }
+    __syncthreads();
 
     if (Row >= 2 && Row < height - 2 && Col >= 2 && Col < width - 2) {
         float out;
         png_byte b;
 
+        // Loop over the three color channels
         for (int color = 0; color < 3; color++) {
             out = 0.0;
+            // Loop over the filter window
             for (int i = -2; i <= 2; i++) {
                 for (int j = -2; j <= 2; j++) {
-                    out += d_filt[(i+2) * 5 + (j+2)] * d_In[((Row + i) * width + (Col + j)) * 3 + color];
+                    out += shared_filt[(i+2) * 5 + (j+2)] * d_In[((Row + i) * width + (Col + j)) * 3 + color];
                 }
             }
+            // Clamp the result to the range [0, 255]
             b = (png_byte)fminf(fmaxf(out, 0.0), 255.0);
             d_Out[(Row * width + Col) * 3 + color] = b;
         }
