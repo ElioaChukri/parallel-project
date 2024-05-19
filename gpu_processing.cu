@@ -24,7 +24,10 @@ __global__ void PictureDevice_FILTER(png_byte *d_In, png_byte *d_Out, int height
             // Loop over the filter window
             for (int i = -2; i <= 2; i++) {
                 for (int j = -2; j <= 2; j++) {
-                    out += shared_filt[(i+2) * 5 + (j+2)] * d_In[((Row + i) * width + (Col + j)) * 3 + color];
+
+                    // Ensure coalesced access by calculating address once and reusing
+                    int img_idx = ((Row + i) * width + (Col + j)) * 3 + color;
+                    out += shared_filt[(i+2) * 5 + (j+2)] * d_In[img_idx];
                 }
             }
             // Clamp the result to the range [0, 255]
