@@ -36,11 +36,11 @@ int main(int argc, char **argv)
 
     printf("Execution Time of processing part: %lld ms\n",gpu_end-gpu_start);
 
-    long long cpu_start = timeInMilliseconds();
-    execute_jobs_cpu(jobs);
-    long long cpu_end = timeInMilliseconds();
-
-    printf("Execution Time of cpu part: %lld ms\n",cpu_end-cpu_start);
+//    long long cpu_start = timeInMilliseconds();
+//    execute_jobs_cpu(jobs);
+//    long long cpu_end = timeInMilliseconds();
+//
+//    printf("Execution Time of cpu part: %lld ms\n",cpu_end-cpu_start);
 
     long long write_start = timeInMilliseconds();
     write_jobs_output_files(jobs);
