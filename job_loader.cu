@@ -1,5 +1,4 @@
 #include "header.h"
-#include <unistd.h>
 
 // struct to handle writing images in different threads
 typedef struct {
@@ -146,7 +145,7 @@ void write_jobs_output_files(PROCESSING_JOB **jobs) {
         count++;
     }
 
-    int num_threads = sysconf(_SC_NPROCESSORS_ONLN); // Get the number of available CPU cores
+    int num_threads = 9;
     pthread_t threads[num_threads];
     WriteThreadData thread_data[num_threads];
     pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
