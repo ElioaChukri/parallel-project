@@ -9,7 +9,7 @@
 #ifndef GLOBALS_H
 #define GLOBALS_H
 extern float sharpen_filter[] ;
-extern float edge_detec_filter[] ;
+extern float edge_detect_filter[] ;
 extern float box_blur_filter[] ;
 #endif
 
