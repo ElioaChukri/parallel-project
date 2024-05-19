@@ -23,12 +23,12 @@ __global__ void PictureDevice_FILTER(png_byte *d_In, png_byte *d_Out, int height
 
 void execute_jobs_gpu(PROCESSING_JOB **jobs) {
     int count = 0;
-    float *d_filter = nullptr;
+    float *d_sharpen_filter = nullptr, *d_box_blur_filter = nullptr, *d_edge_filter = nullptr;
     png_byte *d_In = nullptr, *d_Out = nullptr;
     size_t maxNumPixels = 0;
 
     // Determine the maximum number of pixels to allocate memory once
-    while (jobs[count] != NULL) {
+    while (jobs[count] != nullptr) {
         size_t numPixels = jobs[count]->height * jobs[count]->width * 3; // 3 for RGB channels
         if (numPixels > maxNumPixels) {
             maxNumPixels = numPixels;
@@ -39,16 +39,36 @@ void execute_jobs_gpu(PROCESSING_JOB **jobs) {
     // Allocate memory on the device
     cudaMalloc((void **)&d_In, maxNumPixels * sizeof(png_byte));
     cudaMalloc((void **)&d_Out, maxNumPixels * sizeof(png_byte));
-    cudaMalloc((void **)&d_filter, 25 * sizeof(float)); // Assuming a 5x5 filter
+    cudaMalloc((void **)&d_sharpen_filter, 25 * sizeof(float));
+    cudaMalloc((void **)&d_box_blur_filter, 25 * sizeof(float));
+    cudaMalloc((void **)&d_edge_filter, 25 * sizeof(float));
+
+    // Copy filters to device
+    cudaMemcpy(d_sharpen_filter, sharpen_filter, 25 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_box_blur_filter, box_blur_filter, 25 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_edge_filter, edge_detect_filter, 25 * sizeof(float), cudaMemcpyHostToDevice);
 
     // Initial creation of data and copying of data for the first image job
     char* filename = jobs[0]->source_name;
     size_t numPixels = jobs[0]->height * jobs[0]->width * 3; // 3 for RGB channels
-    float *h_filter = getAlgoFilterByType(jobs[0]->processing_algo);
-    cudaMemcpy(d_filter, h_filter, 25 * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_In, jobs[0]->source_raw, numPixels * sizeof(png_byte), cudaMemcpyHostToDevice);
     dim3 blocks((jobs[0]->width - 4 + 15) / 16, (jobs[0]->height - 4 + 15) / 16);
     dim3 threads(16, 16);
+
+    float *d_filter;
+    switch (jobs[0]->processing_algo) {
+        case SHARPEN:
+            d_filter = d_sharpen_filter;
+            break;
+        case BLUR:
+            d_filter = d_box_blur_filter;
+            break;
+        case EDGE:
+            d_filter = d_edge_filter;
+            break;
+        default:
+            return; // Invalid processing algorithm
+    }
 
     // Run the kernel for the first image
     PictureDevice_FILTER<<<blocks, threads>>>(d_In, d_Out, jobs[0]->height, jobs[0]->width, d_filter);
@@ -58,7 +78,7 @@ void execute_jobs_gpu(PROCESSING_JOB **jobs) {
 
     // Start loop at 1 since we already processed the first image
     count = 1;
-    while (jobs[count] != NULL) {
+    while (jobs[count] != nullptr) {
 
         char* current_filename = jobs[count]->source_name;
 
@@ -66,14 +86,23 @@ void execute_jobs_gpu(PROCESSING_JOB **jobs) {
         if (strcmp(filename, current_filename) != 0) {
             filename = current_filename;
             numPixels = jobs[count]->height * jobs[count]->width * 3; // 3 for RGB channels
-            h_filter = getAlgoFilterByType(jobs[count]->processing_algo);
-            cudaMemcpy(d_filter, h_filter, 25 * sizeof(float), cudaMemcpyHostToDevice);
             cudaMemcpy(d_In, jobs[count]->source_raw, numPixels * sizeof(png_byte), cudaMemcpyHostToDevice);
             blocks = dim3((jobs[count]->width - 4 + 15) / 16, (jobs[count]->height - 4 + 15) / 16);
-        } else {
-            // If the filename is the same, we can reuse the data on the device
-            h_filter = getAlgoFilterByType(jobs[count]->processing_algo);
-            cudaMemcpy(d_filter, h_filter, 25 * sizeof(float), cudaMemcpyHostToDevice);
+        }
+
+        // Determine filter
+        switch (jobs[count]->processing_algo) {
+            case SHARPEN:
+                d_filter = d_sharpen_filter;
+                break;
+            case BLUR:
+                d_filter = d_box_blur_filter;
+                break;
+            case EDGE:
+                d_filter = d_edge_filter;
+                break;
+            default:
+                return; // Invalid processing algorithm
         }
 
         // Launch the kernel
