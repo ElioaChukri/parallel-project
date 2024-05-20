@@ -31,12 +31,21 @@ __global__ void PictureDevice_FILTER(png_byte *d_In, png_byte *d_Out, int height
         // Handle the halo region
         for (int i = 0; i < SHARED_SIZE; i += TILE_SIZE) {
             for (int j = 0; j < SHARED_SIZE; j += TILE_SIZE) {
+
+                // Check if the pixel is within the image bounds
                 if ((shared_x + i) < SHARED_SIZE && (shared_y + j) < SHARED_SIZE) {
+
+                    // Coordinate variables for the global image
                     int gx = global_x + i;
                     int gy = global_y + j;
+
+                    // Check if the pixel is within the image bounds
                     if (gx >= 0 && gx < width && gy >= 0 && gy < height) {
+
+                        // Copy the pixel to shared memory
                         shared_tile[((shared_y + j) * SHARED_SIZE + (shared_x + i)) * 3 + color] = d_In[(gy * width + gx) * 3 + color];
                     } else {
+                        // Set the pixel to 0 if it is outside the image bounds
                         shared_tile[((shared_y + j) * SHARED_SIZE + (shared_x + i)) * 3 + color] = 0;
                     }
                 }
@@ -44,8 +53,10 @@ __global__ void PictureDevice_FILTER(png_byte *d_In, png_byte *d_Out, int height
         }
     }
 
+    // Ensure all threads in the block have loaded the data before proceeding
     __syncthreads();
 
+    // Check if the thread is within the image bounds
     if (Row < height && Col < width) {
         float out;
         png_byte b;
@@ -53,7 +64,7 @@ __global__ void PictureDevice_FILTER(png_byte *d_In, png_byte *d_Out, int height
         // Loop over the three color channels
         for (int color = 0; color < 3; color++) {
             out = 0.0;
-            // Loop over the filter window
+            // Loop over the filter window centered on the current pixel
             for (int i = -RADIUS; i <= RADIUS; i++) {
                 for (int j = -RADIUS; j <= RADIUS; j++) {
                     out += shared_filt[(i + RADIUS) * FILTER_SIZE + (j + RADIUS)] *
