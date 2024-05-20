@@ -1,20 +1,52 @@
 #include "header.h"
 
+#define TILE_SIZE 16
+#define FILTER_SIZE 5
+#define RADIUS (FILTER_SIZE / 2)
+#define SHARED_SIZE (TILE_SIZE + FILTER_SIZE - 1)
+
 __global__ void PictureDevice_FILTER(png_byte *d_In, png_byte *d_Out, int height, int width, float *d_filt) {
     // Calculate thread coordinates
-    int Col = blockIdx.x * blockDim.x + threadIdx.x;
-    int Row = blockIdx.y * blockDim.y + threadIdx.y;
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    int Col = blockIdx.x * TILE_SIZE + tx;
+    int Row = blockIdx.y * TILE_SIZE + ty;
 
-    // Define shared memory for the filter
-    __shared__ float shared_filt[25]; // 5x5 filter
+    // Define shared memory for the filter and a tile of the image
+    __shared__ float shared_filt[FILTER_SIZE * FILTER_SIZE]; // 5x5 filter
+    __shared__ png_byte shared_tile[SHARED_SIZE * SHARED_SIZE * 3]; // Tile of the image (3 color channels)
 
     // Load filter into shared memory
-    if (threadIdx.x < 5 && threadIdx.y < 5) {
-        shared_filt[threadIdx.y * 5 + threadIdx.x] = d_filt[threadIdx.y * 5 + threadIdx.x];
+    if (tx < FILTER_SIZE && ty < FILTER_SIZE) {
+        shared_filt[ty * FILTER_SIZE + tx] = d_filt[ty * FILTER_SIZE + tx];
     }
+
+    // Load image tile into shared memory
+    for (int color = 0; color < 3; color++) {
+        int global_x = Col - RADIUS;
+        int global_y = Row - RADIUS;
+        int shared_x = tx;
+        int shared_y = ty;
+
+        // Handle the halo region
+        for (int i = 0; i < SHARED_SIZE; i += TILE_SIZE) {
+            for (int j = 0; j < SHARED_SIZE; j += TILE_SIZE) {
+                if ((shared_x + i) < SHARED_SIZE && (shared_y + j) < SHARED_SIZE) {
+                    int gx = global_x + i;
+                    int gy = global_y + j;
+                    if (gx >= 0 && gx < width && gy >= 0 && gy < height) {
+                        shared_tile[((shared_y + j) * SHARED_SIZE + (shared_x + i)) * 3 + color] = d_In[(gy * width + gx) * 3 + color];
+                    } else {
+                        shared_tile[((shared_y + j) * SHARED_SIZE + (shared_x + i)) * 3 + color] = 0;
+                    }
+                }
+            }
+        }
+    }
+
     __syncthreads();
 
-    if (Row >= 2 && Row < height - 2 && Col >= 2 && Col < width - 2) {
+    if (Row < height && Col < width) {
         float out;
         png_byte b;
 
@@ -22,12 +54,10 @@ __global__ void PictureDevice_FILTER(png_byte *d_In, png_byte *d_Out, int height
         for (int color = 0; color < 3; color++) {
             out = 0.0;
             // Loop over the filter window
-            for (int i = -2; i <= 2; i++) {
-                for (int j = -2; j <= 2; j++) {
-
-                    // Ensure coalesced access by calculating address once and reusing
-                    int img_idx = ((Row + i) * width + (Col + j)) * 3 + color;
-                    out += shared_filt[(i+2) * 5 + (j+2)] * d_In[img_idx];
+            for (int i = -RADIUS; i <= RADIUS; i++) {
+                for (int j = -RADIUS; j <= RADIUS; j++) {
+                    out += shared_filt[(i + RADIUS) * FILTER_SIZE + (j + RADIUS)] *
+                           shared_tile[((ty + i + RADIUS) * SHARED_SIZE + (tx + j + RADIUS)) * 3 + color];
                 }
             }
             // Clamp the result to the range [0, 255]
